@@ -1,0 +1,18 @@
+import{config}from '../../lib/config';
+import{RawQuote,HistoricalDataPoint,Fundamentals}from '../../types';
+const BASE=config.brapi.baseUrl;
+const TOKEN=config.brapi.token;
+function buildHeaders():HeadersInit{const h:HeadersInit={'Content-Type':'application/json'};if(TOKEN)h['Authorization']=`Bearer ${TOKEN}`;return h;}
+async function fetchBrapi<T>(path:string,params:Record<string,string>={}):Promise<T>{
+  const url=new URL(`${BASE}${path}`);Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),config.brapi.timeout);
+  try{const res=await fetch(url.toString(),{headers:buildHeaders(),signal:controller.signal});clearTimeout(timeout);if(!res.ok)throw new Error(`BRAPI ${res.status}: ${res.statusText}`);return res.json() as Promise<T>;}finally{clearTimeout(timeout);}
+}
+interface BrapiResult{symbol:string;shortName:string;currency:string;regularMarketPrice:number;regularMarketOpen:number;regularMarketDayHigh:number;regularMarketDayLow:number;regularMarketPreviousClose:number;regularMarketChange:number;regularMarketChangePercent:number;regularMarketVolume:number;marketCap?:number;priceEarnings?:number;priceToBook?:number;dividendsYield?:number;trailingPE?:number;regularMarketTime:number;historicalDataPrice?:Array<{date:number;open:number;high:number;low:number;close:number;volume:number;adjustedClose:number}>;}
+interface BrapiResponse{results:BrapiResult[];requestedAt:string;}
+function mapQuote(r:BrapiResult):RawQuote{return{ticker:r.symbol,price:r.regularMarketPrice,open:r.regularMarketOpen,high:r.regularMarketDayHigh,low:r.regularMarketDayLow,close:r.regularMarketPrice,previousClose:r.regularMarketPreviousClose,change:r.regularMarketChange,changePercent:r.regularMarketChangePercent,volume:r.regularMarketVolume,marketCap:r.marketCap,source:'BRAPI',timestamp:new Date(r.regularMarketTime*1000)};}
+function mapFund(r:BrapiResult):Fundamentals{return{pl:r.priceEarnings??r.trailingPE,pvp:r.priceToBook,dividendYield:r.dividendsYield};}
+function mapHist(r:BrapiResult):HistoricalDataPoint[]{return(r.historicalDataPrice??[]).map(d=>({date:new Date(d.date*1000).toISOString().split('T')[0],open:d.open,high:d.high,low:d.low,close:d.adjustedClose??d.close,volume:d.volume}));}
+export async function getQuote(ticker:string){try{const data=await fetchBrapi<BrapiResponse>(`/quote/${ticker}`,{fundamental:'true',dividends:'true'});if(!data.results?.length)return null;const r=data.results[0];return{quote:mapQuote(r),fundamentals:mapFund(r)};}catch(err){console.error(`[BRAPI] getQuote(${ticker})`,err);return null;}}
+export async function getBatchQuotes(tickers:string[]){const result=new Map<string,{quote:RawQuote;fundamentals:Fundamentals}>();const CHUNK=10;for(let i=0;i<tickers.length;i+=CHUNK){const chunk=tickers.slice(i,i+CHUNK);try{const data=await fetchBrapi<BrapiResponse>(`/quote/${chunk.join(',')}`,{fundamental:'true',dividends:'true'});data.results?.forEach(r=>{result.set(r.symbol,{quote:mapQuote(r),fundamentals:mapFund(r)});});}catch(err){console.error('[BRAPI] getBatchQuotes',err);}if(i+CHUNK<tickers.length)await new Promise(r=>setTimeout(r,200));}return result;}
+export async function getHistoricalData(ticker:string,range='3mo' as string,interval='1d' as string){try{const data=await fetchBrapi<BrapiResponse>(`/quote/${ticker}`,{range,interval,fundamental:'false'});if(!data.results?.length)return[];return mapHist(data.results[0]);}catch(err){console.error(`[BRAPI] getHistoricalData(${ticker})`,err);return[];}}
