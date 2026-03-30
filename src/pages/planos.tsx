@@ -1,80 +1,88 @@
 import{useState}from 'react';
 import{useSession}from 'next-auth/react';
 import{useRouter}from 'next/router';
-import Head from 'next/head';
+import AppLayout from '../components/layout/AppLayout';
+
+const PLANS=[
+  {id:'FREE',label:'FREE',price:0,period:'',color:'#4a5568',features:['10 ativos monitorados','5 alertas ativos','3 análises IA/dia','Cache 5 min','Backtesting 30 dias'],cta:'Criar conta grátis',href:'/auth/register'},
+  {id:'PRO',label:'PRO',price:97,period:'/mês',color:'#00d9ff',features:['30 ativos monitorados','50 alertas ativos','50 análises IA/dia','Cache 1 min','Backtesting 1 ano','Sinais avançados'],cta:'Assinar PRO',highlight:false},
+  {id:'PREMIUM',label:'PREMIUM',price:197,period:'/mês',color:'#a855f7',features:['100 ativos monitorados','Alertas ilimitados','IA ilimitada','Cache em tempo real','Backtesting 2 anos','Suporte prioritário','API access'],cta:'Assinar PREMIUM',highlight:true},
+];
+
 export default function Planos(){
   const{data:session}=useSession();
   const router=useRouter();
   const[loading,setLoading]=useState<string|null>(null);
   const[error,setError]=useState<string|null>(null);
-  const plans=[
-    {id:'FREE',name:'FREE',price:'Grátis',priceNum:0,color:'#6b7280',
-     features:['10 ativos monitorados','5 alertas ativos','3 análises IA/dia','Cache 5 min','Backtesting 30 dias'],
-     cta:'Criar conta grátis',ctaHref:'/auth/register'},
-    {id:'PRO',name:'PRO',price:'R$97/mês',priceNum:97,color:'#06b6d4',
-     features:['30 ativos monitorados','50 alertas ativos','50 análises IA/dia','Cache 1 min','Backtesting 1 ano','Sinais avançados'],
-     cta:'Assinar PRO',ctaHref:null},
-    {id:'PREMIUM',name:'PREMIUM',price:'R$197/mês',priceNum:197,color:'#a855f7',
-     features:['100 ativos monitorados','Alertas ilimitados','IA ilimitada','Cache em tempo real','Backtesting 2 anos','Suporte prioritário','API access'],
-     cta:'Assinar PREMIUM',ctaHref:null},
-  ];
-  const handleBuy=async(planId:string)=>{
-    if(!session){router.push('/auth/register');return;}
+
+  const handleSubscribe=async(planId:string)=>{
+    if(planId==='FREE'){router.push('/auth/register');return;}
+    if(!session){router.push('/auth/login');return;}
     setLoading(planId);setError(null);
     try{
-      const r=await fetch('/api/billing/checkout',{method:'POST',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:planId})});
+      const r=await fetch('/api/billing/checkout',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({planName:planId}),
+      });
       const d=await r.json();
-      if(!r.ok)throw new Error(d.error||'Erro ao criar checkout');
-      if(d.url)window.open(d.url,'_blank');
+      if(!r.ok)throw new Error(d.error||'Erro ao criar pagamento');
+      if(d.checkoutUrl){window.location.href=d.checkoutUrl;}
       else throw new Error('URL de checkout não retornada');
     }catch(e:any){setError(e.message);}
     finally{setLoading(null);}
   };
+
   const currentPlan=session?.user?.plan||'FREE';
+
   return(
-    <>
-    <Head><title>Planos — QuantRadar</title></Head>
-    <div style={{minHeight:'100vh',background:'var(--bg)',padding:'48px 24px'}}>
-      <div style={{maxWidth:960,margin:'0 auto'}}>
-        <h1 style={{textAlign:'center',fontSize:32,fontWeight:700,color:'var(--text)',marginBottom:8}}>Escolha seu plano</h1>
-        <p style={{textAlign:'center',color:'var(--text-muted)',marginBottom:48}}>Inteligência financeira para todos os perfis de investidor</p>
-        {error&&<div style={{background:'#ff000020',border:'1px solid #ff0000',borderRadius:8,padding:'12px 16px',marginBottom:24,color:'#ff6b6b',textAlign:'center'}}>{error}</div>}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:24}}>
-          {plans.map(p=>{
-            const isCurrent=currentPlan===p.id;
-            const isLoading=loading===p.id;
+    <AppLayout>
+      <div style={{maxWidth:1000,margin:'0 auto',padding:'40px 24px'}}>
+        <div style={{textAlign:'center',marginBottom:48}}>
+          <h1 style={{fontSize:36,fontWeight:700,color:'var(--text)',marginBottom:8}}>Escolha seu plano</h1>
+          <p style={{color:'var(--text-muted)',fontSize:16}}>Inteligência financeira para todos os perfis de investidor</p>
+        </div>
+        {error&&<div style={{background:'#fed7d7',color:'#c53030',padding:'12px 16px',borderRadius:8,marginBottom:24,textAlign:'center'}}>{error}</div>}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:24}}>
+          {PLANS.map(plan=>{
+            const isCurrent=currentPlan===plan.id;
             return(
-              <div key={p.id} style={{background:'var(--surface)',border:`2px solid ${isCurrent?p.color:'var(--border)'}`,borderRadius:16,padding:32,display:'flex',flexDirection:'column',gap:16,position:'relative'}}>
-                {isCurrent&&<div style={{position:'absolute',top:-12,left:'50%',transform:'translateX(-50%)',background:p.color,color:'#fff',fontSize:11,fontWeight:700,padding:'4px 12px',borderRadius:20}}>SEU PLANO</div>}
-                <div>
-                  <div style={{fontSize:13,fontWeight:600,color:p.color,letterSpacing:2,marginBottom:4}}>{p.name}</div>
-                  <div style={{fontSize:28,fontWeight:700,color:'var(--text)'}}>{p.price}</div>
+              <div key={plan.id} style={{
+                background:'var(--surface)',border:`2px solid ${plan.highlight?plan.color:'var(--border)'}`,
+                borderRadius:16,padding:32,position:'relative',
+                boxShadow:plan.highlight?'0 0 30px rgba(168,85,247,0.2)':'none',
+              }}>
+                {isCurrent&&<div style={{position:'absolute',top:-12,right:16,background:plan.color,color:'#fff',fontSize:11,fontWeight:700,padding:'2px 10px',borderRadius:20}}>SEU PLANO</div>}
+                <div style={{fontSize:12,color:plan.color,fontWeight:700,letterSpacing:2,marginBottom:8}}>{plan.id}</div>
+                <div style={{fontSize:28,fontWeight:800,color:'var(--text)',marginBottom:4}}>
+                  {plan.price===0?'Grátis':`R$${plan.price}`}<span style={{fontSize:14,fontWeight:400,color:'var(--text-muted)'}}>{plan.period}</span>
                 </div>
-                <ul style={{listStyle:'none',padding:0,margin:0,display:'flex',flexDirection:'column',gap:8,flex:1}}>
-                  {p.features.map(f=>(
-                    <li key={f} style={{fontSize:13,color:'var(--text-muted)',display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{color:p.color}}>✓</span>{f}
-                    </li>
+                <div style={{borderTop:'1px solid var(--border)',margin:'20px 0',paddingTop:20}}>
+                  {plan.features.map(f=>(
+                    <div key={f} style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,fontSize:13,color:'var(--text-muted)'}}>
+                      <span style={{color:'#00ff88'}}>✓</span>{f}
+                    </div>
                   ))}
-                </ul>
+                </div>
                 <button
-                  onClick={()=>p.ctaHref?router.push(p.ctaHref):handleBuy(p.id)}
-                  disabled={isCurrent||isLoading}
-                  style={{width:'100%',padding:'12px 0',borderRadius:8,border:'none',cursor:isCurrent||isLoading?'not-allowed':'pointer',
-                    background:isCurrent?'var(--border)':p.color,color:isCurrent?'var(--text-muted)':'#fff',
-                    fontWeight:700,fontSize:14,opacity:isCurrent?0.7:1,transition:'opacity .2s'}}>
-                  {isLoading?'Processando...':(isCurrent?'Plano atual':p.cta)}
-                </button>
+                  onClick={()=>handleSubscribe(plan.id)}
+                  disabled={isCurrent||loading===plan.id}
+                  style={{
+                    width:'100%',padding:'12px 0',borderRadius:8,border:'none',
+                    fontWeight:700,fontSize:15,cursor:isCurrent?'default':'pointer',
+                    background:isCurrent?'var(--border)':plan.highlight?plan.color:plan.price===0?'var(--surface-hover)':'var(--primary)',
+                    color:isCurrent?'var(--text-muted)':'#fff',
+                    opacity:loading&&loading!==plan.id?0.6:1,
+                    transition:'all .2s',
+                  }}
+                >{loading===plan.id?'Aguarde...':isCurrent?'Plano atual':plan.cta}</button>
               </div>
             );
           })}
         </div>
         <p style={{textAlign:'center',color:'var(--text-muted)',fontSize:12,marginTop:32}}>
-          Pagamento processado com segurança pelo AppMax. Cancele quando quiser.
+          Pagamento processado com segurança pelo PagBank. Cancele quando quiser.
         </p>
       </div>
-    </div>
-    </>
+    </AppLayout>
   );
 }

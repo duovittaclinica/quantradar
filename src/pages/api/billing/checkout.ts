@@ -1,51 +1,84 @@
 import type{NextApiRequest,NextApiResponse}from 'next';
 import{getServerSession}from 'next-auth/next';
 import{authOptions}from '../../../auth/config';
+import{prisma}from '../../../database/client';
 
-const APPMAX_API=process.env.APPMAX_API_URL||'https://sandbox.appmax.com.br/api/v3';
-const APPMAX_KEY=process.env.APPMAX_API_KEY||'';
+const PAGBANK_URL = process.env.PAGBANK_ENV==='sandbox'
+  ? 'https://sandbox.api.pagseguro.com'
+  : 'https://api.pagseguro.com';
 
-const PLAN_PRODUCTS:Record<string,{name:string;price:number;appmax_id?:string}> = {
-  PRO:     {name:'QuantRadar PRO',    price:9700},  // R$97,00 em centavos
-  PREMIUM: {name:'QuantRadar PREMIUM',price:19700}, // R$197,00 em centavos
+const PLANS: Record<string,{name:string;amount:number;description:string}> = {
+  PRO:     {name:'QuantRadar PRO',    amount:9700, description:'Plano PRO - 30 ativos, 50 alertas, 50 analises IA/dia'},
+  PREMIUM: {name:'QuantRadar PREMIUM',amount:19700,description:'Plano PREMIUM - 100 ativos, alertas ilimitados, IA ilimitada'},
 };
 
 export default async function handler(req:NextApiRequest,res:NextApiResponse){
   if(req.method!=='POST')return res.status(405).end();
   const session=await getServerSession(req,res,authOptions);
   if(!session)return res.status(401).json({error:'Unauthorized'});
+
+  const{planName}=req.body;
+  const plan=PLANS[planName?.toUpperCase()];
+  if(!plan)return res.status(400).json({error:'Plano inválido. Use PRO ou PREMIUM'});
+
+  const token=process.env.PAGBANK_TOKEN;
+  if(!token)return res.status(500).json({error:'PAGBANK_TOKEN não configurado'});
+
   try{
-    const{plan}=req.body;
-    if(!PLAN_PRODUCTS[plan])return res.status(400).json({error:'Plano inválido'});
-    if(!APPMAX_KEY)return res.status(500).json({error:'AppMax não configurado'});
-    const product=PLAN_PRODUCTS[plan];
-    // Create order in AppMax
-    const orderRes=await fetch(APPMAX_API+'/order',{
+    const user=await prisma.user.findUnique({where:{id:session.user.id}});
+    if(!user)return res.status(404).json({error:'Usuário não encontrado'});
+
+    const baseUrl=process.env.NEXTAUTH_URL||'https://quantradar4.vercel.app';
+    const referenceId=`qr_${planName.toLowerCase()}_${user.id}_${Date.now()}`;
+
+    const body={
+      reference_id: referenceId,
+      customer:{
+        name: user.name||user.email.split('@')[0],
+        email: user.email,
+      },
+      items:[{
+        reference_id: planName,
+        name: plan.name,
+        quantity: 1,
+        unit_amount: plan.amount,
+      }],
+      payment_methods:[{type:'CREDIT_CARD'},{type:'DEBIT_CARD'},{type:'PIX'}],
+      redirect_url: `${baseUrl}/billing/sucesso?plan=${planName}`,
+      notification_urls:[`${baseUrl}/api/billing/webhook`],
+      soft_descriptor:'QuantRadar',
+    };
+
+    const response=await fetch(`${PAGBANK_URL}/orders`,{
       method:'POST',
-      headers:{'Content-Type':'application/json','access-token':APPMAX_KEY},
-      body:JSON.stringify({
-        cart:{
-          contents:[{name:product.name,qty:1,price:product.price}],
-          total:product.price,
-        },
-        customer:{
-          email:session.user.email,
-          name:session.user.name||session.user.email,
-        },
-        postback_url:process.env.NEXTAUTH_URL+'/api/billing/webhook',
-        metadata:{userId:session.user.id,plan},
-      })
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':`Bearer ${token}`,
+        'x-api-version':'4.0',
+      },
+      body:JSON.stringify(body),
     });
-    const order=await orderRes.json();
-    if(!orderRes.ok)return res.status(400).json({error:'Erro AppMax',detail:order});
-    // Get checkout link
-    const checkoutRes=await fetch(APPMAX_API+'/payment-link',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','access-token':APPMAX_KEY},
-      body:JSON.stringify({order_id:order.data?.id||order.id,payment_method:'pix,credit_card'})
+
+    if(!response.ok){
+      const err=await response.text();
+      console.error('PagBank error:',err);
+      return res.status(502).json({error:'Erro ao criar ordem PagBank',details:err});
+    }
+
+    const order=await response.json();
+    // Find checkout link
+    const checkoutLink=order.links?.find((l:any)=>l.rel==='PAY')?.href
+      ||order.links?.find((l:any)=>l.rel==='CHECKOUT')?.href
+      ||order.links?.[0]?.href;
+
+    return res.json({
+      orderId: order.id,
+      referenceId,
+      checkoutUrl: checkoutLink,
+      status: order.status,
     });
-    const checkout=await checkoutRes.json();
-    const url=checkout.data?.url||checkout.url||checkout.payment_url;
-    return res.json({url,orderId:order.data?.id||order.id,plan,price:product.price});
-  }catch(e:any){return res.status(500).json({error:e.message});}
+  }catch(e:any){
+    console.error('Checkout error:',e);
+    return res.status(500).json({error:e.message});
+  }
 }
