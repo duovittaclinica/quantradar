@@ -2,34 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: 'logo.brapi.dev' },
-      { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
-    ],
+  experimental: {
+    serverComponentsExternalPackages: ['@prisma/client', 'prisma'],
   },
-
   env: {
-    NEXT_PUBLIC_APP_NAME: 'QuantRadar',
-    NEXT_PUBLIC_APP_URL: process.env.NEXTAUTH_URL || 'https://quantradar.vercel.app',
+    DATABASE_URL: process.env.DATABASE_URL,
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
   },
-
-  async headers() {
-    return [
-      {
-        source: '/api/:path*',
-        headers: [
-          { key: 'X-Content-Type-Options',  value: 'nosniff' },
-          { key: 'X-Frame-Options',         value: 'DENY' },
-          { key: 'X-XSS-Protection',        value: '1; mode=block' },
-          { key: 'Referrer-Policy',         value: 'strict-origin-when-cross-origin' },
-        ],
-      },
-    ];
-  },
-
-  serverExternalPackages: ['@prisma/client', 'bcryptjs', 'ioredis'],
 };
-
 module.exports = nextConfig;
