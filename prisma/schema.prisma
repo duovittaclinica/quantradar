@@ -9,41 +9,42 @@ datasource db {
 }
 
 model Plan {
-  id                   String  @id @default(cuid())
-  name                 String  @unique
+  id                   String   @id @default(cuid())
+  name                 String   @unique
   stripePriceIdMonthly String?
-  maxAssets            Int     @default(10)
-  maxAlerts            Int     @default(5)
-  maxAiDaily           Int     @default(3)
-  cacheSeconds         Int     @default(300)
-  backtestDays         Int     @default(30)
+  maxAssets            Int      @default(10)
+  maxAlerts            Int      @default(5)
+  maxAiDaily           Int      @default(3)
+  cacheSeconds         Int      @default(300)
+  backtestDays         Int      @default(30)
   createdAt            DateTime @default(now())
   users                User[]
-  @@map("plans")
-  @@schema("qr")
+
+  @@map("qr_plans")
 }
 
 model User {
   id                   String   @id @default(cuid())
   email                String   @unique
   name                 String?
-  passwordHash         String?  @map("password_hash")
+  passwordHash         String?
   role                 String   @default("USER")
   plan                 String   @default("FREE")
   profile              String   @default("MODERADO")
-  planId               String?  @map("plan_id")
-  stripeCustomerId     String?  @map("stripe_customer_id")
-  stripeSubscriptionId String?  @map("stripe_subscription_id")
-  aiUsageToday         Int      @default(0) @map("ai_usage_today")
-  aiUsageResetAt       DateTime @default(now()) @map("ai_usage_reset_at")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  planId               String?
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  aiUsageToday         Int      @default(0)
+  aiUsageResetAt       DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
   planRelation         Plan?    @relation(fields: [planId], references: [id])
   watchlists           Watchlist[]
   alerts               Alert[]
   signals              Signal[]
-  @@map("users")
-  @@schema("qr")
+  aiUsage              AiUsage[]
+
+  @@map("qr_users")
 }
 
 model Asset {
@@ -53,76 +54,76 @@ model Asset {
   type      String   @default("ACAO")
   sector    String?
   active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now())
   signals   Signal[]
   watchlistItems WatchlistItem[]
   alerts    Alert[]
-  @@map("assets")
-  @@schema("qr")
+
+  @@map("qr_assets")
 }
 
 model Signal {
-  id           String   @id @default(cuid())
-  assetId      String?  @map("asset_id")
-  userId       String?  @map("user_id")
-  score        Float
-  tag          String
-  profile      String   @default("MODERADO")
-  breakdown    Json     @default("{}")
-  justification Json    @default("[]")
-  risks        Json     @default("[]")
-  targetPrice  Float?   @map("target_price")
-  stopLoss     Float?   @map("stop_loss")
-  horizon      String?
-  confidence   Float    @default(0)
-  weights      Json     @default("{}")
-  price        Float    @default(0)
-  generatedAt  DateTime @default(now()) @map("generated_at")
-  asset        Asset?   @relation(fields: [assetId], references: [id])
-  user         User?    @relation(fields: [userId], references: [id])
-  @@map("signals")
-  @@schema("qr")
+  id            String   @id @default(cuid())
+  assetId       String?
+  userId        String?
+  score         Float
+  tag           String
+  profile       String   @default("MODERADO")
+  breakdown     Json     @default("{}")
+  justification Json     @default("[]")
+  risks         Json     @default("[]")
+  targetPrice   Float?
+  stopLoss      Float?
+  horizon       String?
+  confidence    Float    @default(0)
+  weights       Json     @default("{}")
+  price         Float    @default(0)
+  generatedAt   DateTime @default(now())
+  asset         Asset?   @relation(fields: [assetId], references: [id])
+  user          User?    @relation(fields: [userId], references: [id])
+
+  @@map("qr_signals")
 }
 
 model Watchlist {
   id        String   @id @default(cuid())
-  userId    String   @map("user_id")
+  userId    String
   name      String   @default("Principal")
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
   items     WatchlistItem[]
-  @@map("watchlists")
-  @@schema("qr")
+
+  @@map("qr_watchlists")
 }
 
 model WatchlistItem {
   id          String   @id @default(cuid())
-  watchlistId String   @map("watchlist_id")
-  assetId     String   @map("asset_id")
-  addedAt     DateTime @default(now()) @map("added_at")
+  watchlistId String
+  assetId     String
+  addedAt     DateTime @default(now())
   watchlist   Watchlist @relation(fields: [watchlistId], references: [id])
   asset       Asset    @relation(fields: [assetId], references: [id])
+
   @@unique([watchlistId, assetId])
-  @@map("watchlist_items")
-  @@schema("qr")
+  @@map("qr_watchlist_items")
 }
 
 model Alert {
-  id            String   @id @default(cuid())
-  userId        String   @map("user_id")
-  assetId       String?  @map("asset_id")
+  id            String    @id @default(cuid())
+  userId        String
+  assetId       String?
   type          String
-  condition     Json     @default("{}")
-  channels      String[] @default(["panel"])
-  active        Boolean  @default(true)
-  triggered     Boolean  @default(false)
+  condition     Json      @default("{}")
+  channels      String[]  @default(["panel"])
+  active        Boolean   @default(true)
+  triggered     Boolean   @default(false)
   message       String?
-  lastTriggered DateTime? @map("last_triggered_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  user          User     @relation(fields: [userId], references: [id])
-  asset         Asset?   @relation(fields: [assetId], references: [id])
-  @@map("alerts")
-  @@schema("qr")
+  lastTriggered DateTime?
+  createdAt     DateTime  @default(now())
+  user          User      @relation(fields: [userId], references: [id])
+  asset         Asset?    @relation(fields: [assetId], references: [id])
+
+  @@map("qr_alerts")
 }
 
 model NewsCache {
@@ -132,32 +133,33 @@ model NewsCache {
   url            String   @unique
   source         String
   sentiment      String   @default("neutro")
-  sentimentScore Float    @default(0) @map("sentiment_score")
+  sentimentScore Float    @default(0)
   tickers        String[] @default([])
-  publishedAt    DateTime @map("published_at")
-  cachedAt       DateTime @default(now()) @map("cached_at")
-  @@map("news_cache")
-  @@schema("qr")
+  publishedAt    DateTime
+  cachedAt       DateTime @default(now())
+
+  @@map("qr_news_cache")
 }
 
 model JobLog {
-  id        String   @id @default(cuid())
-  jobName   String   @map("job_name")
-  status    String
-  durationMs Int     @default(0) @map("duration_ms")
-  itemCount Int?     @map("item_count")
-  error     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  @@map("job_logs")
-  @@schema("qr")
+  id         String   @id @default(cuid())
+  jobName    String
+  status     String
+  durationMs Int      @default(0)
+  itemCount  Int?
+  error      String?
+  createdAt  DateTime @default(now())
+
+  @@map("qr_job_logs")
 }
 
 model AiUsage {
-  id     String @id @default(cuid())
-  userId String @map("user_id")
+  id     String   @id @default(cuid())
+  userId String
   date   DateTime @default(now())
-  count  Int    @default(0)
+  count  Int      @default(0)
+  user   User     @relation(fields: [userId], references: [id])
+
   @@unique([userId, date])
-  @@map("ai_usage")
-  @@schema("qr")
+  @@map("qr_ai_usage")
 }
