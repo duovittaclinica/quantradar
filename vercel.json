@@ -1,20 +1,12 @@
 {
   "version": 2,
-  "buildCommand": "prisma generate && next build",
-  "crons": [
-    {
-      "path": "/api/cron/radar-update",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/alert-check",
-      "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/news-refresh",
-      "schedule": "0 12 * * *"
-    }
-  ],
+  "buildCommand": "npx prisma generate && next build",
+  "framework": "nextjs",
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "NEXTAUTH_SECRET": "@nextauth_secret",
+    "NEXTAUTH_URL": "@nextauth_url"
+  },
   "headers": [
     {
       "source": "/api/(.*)",
