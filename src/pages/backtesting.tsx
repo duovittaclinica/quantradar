@@ -1,94 +1,156 @@
-/**
- * Backtesting page — /backtesting
- */
-import React,{useState}from 'react';
-import{BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine,LineChart,Line}from 'recharts';
+import{useState}from 'react';
 import{useSession}from 'next-auth/react';
-import{useBacktest}from '../hooks/useMarket';
-import Link from 'next/link';
-import type{BacktestResult}from '../services/backtesting/engine';
-const PROFILES=['MODERADO','CONSERVADOR','AGRESSIVO','DIVIDENDOS','VALORIZACAO'];
-const POPULAR=['PETR4','VALE3','ITUB4','WEGE3','MXRF11','IVVB11'];
-function StatCard({label,value,color='var(--text)',sub}:{label:string;value:string|number;color?:string;sub?:string}){
-  return(<div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px'}}>
-    <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>{label}</div>
-    <div style={{fontSize:22,fontWeight:800,color,lineHeight:1}}>{value}</div>
-    {sub&&<div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{sub}</div>}
-  </div>);}
-export default function BacktestingPage(){
+import AppLayout from '../components/layout/AppLayout';
+
+const TICKERS=['PETR4','VALE3','ITUB4','BBDC4','WEGE3','RENT3','ABEV3','B3SA3','PRIO3','RADL3',
+  'GGBR4','MXRF11','KNRI11','HGLG11','XPML11','IVVB11','BOVA11','HASH11'];
+
+type BacktestResult={
+  ticker:string;profile:string;
+  summary:{totalReturn:number;totalTrades:number;wins:number;losses:number;winRate:number;
+    avgWin:number;avgLoss:number;sharpeRatio:number;maxDrawdown:number;profitFactor:number;finalEquity:number};
+  trades:{entryDate:string;exitDate:string;pnlPercent:number;result:string;holdingDays:number}[];
+};
+
+export default function Backtesting(){
   const{data:session}=useSession();
   const[ticker,setTicker]=useState('PETR4');
   const[profile,setProfile]=useState('MODERADO');
   const[minScore,setMinScore]=useState(65);
-  const[targetPct,setTarget]=useState(8);
-  const[stopPct,setStop]=useState(4);
-  const{mutate:runTest,loading,data:result}=useBacktest();
-  const bt=result as unknown as BacktestResult|null;
-  const isPro=session?.user?.plan==='PRO'||session?.user?.plan==='PREMIUM'||session?.user?.role==='ADMIN';
-  const handleRun=async()=>{await runTest({ticker,profile,minScore,targetPct,stopPct});};
-  if(!session)return<div style={{padding:48,textAlign:'center',color:'var(--text-muted)'}}>Login necessário</div>;
-  if(!isPro)return(<div style={{padding:48,textAlign:'center'}}>
-    <div style={{fontSize:40,marginBottom:16}}>⏱</div>
-    <div style={{fontWeight:700,fontSize:18,marginBottom:8}}>Backtesting — Plano PRO</div>
-    <div style={{color:'var(--text-muted)',marginBottom:24}}>Teste estratégias históricas e veja performance dos sinais</div>
-    <Link href="/pricing" style={{padding:'12px 24px',background:'var(--accent)',color:'var(--bg)',borderRadius:8,fontWeight:700,textDecoration:'none'}}>Fazer Upgrade</Link>
-  </div>);
-  const inp={padding:'9px 10px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text)',fontSize:12,outline:'none',width:'100%',boxSizing:'border-box' as const};
-  const equityData=bt?.trades.reduce((acc:any[],tr,i)=>{const prev=acc[i-1]?.equity??100;return[...acc,{date:tr.exitDate,equity:+(prev*(1+tr.returnPct/100)).toFixed(2)}];},[]as any[])??[];
-  return(<div style={{padding:24}}>
-    <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:20}}>
-      <div style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:16,padding:20}}>
-        <div style={{fontSize:14,fontWeight:700,color:'var(--text)',marginBottom:16}}>⚙️ Configurar</div>
-        <div style={{display:'flex',flexDirection:'column',gap:12}}>
-          <div><label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4}}>Ticker</label><input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())} style={inp}/></div>
-          <div><label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4}}>Perfil</label><select value={profile} onChange={e=>setProfile(e.target.value)} style={{...inp,cursor:'pointer'}}>{PROFILES.map(p=><option key={p}>{p}</option>)}</select></div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-            <div><label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4}}>Score</label><input type="number" value={minScore} onChange={e=>setMinScore(Number(e.target.value))} style={inp}/></div>
-            <div><label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4}}>Alvo %</label><input type="number" value={targetPct} onChange={e=>setTarget(Number(e.target.value))} style={inp}/></div>
-            <div><label style={{fontSize:11,color:'var(--text-muted)',display:'block',marginBottom:4}}>Stop %</label><input type="number" value={stopPct} onChange={e=>setStop(Number(e.target.value))} style={inp}/></div>
+  const[targetPct,setTargetPct]=useState(8);
+  const[stopPct,setStopPct]=useState(4);
+  const[result,setResult]=useState<BacktestResult|null>(null);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState<string|null>(null);
+
+  const runBacktest=async()=>{
+    if(!session){setError('Faça login para usar o backtesting');return;}
+    setLoading(true);setError(null);setResult(null);
+    try{
+      const r=await fetch('/api/backtesting/run',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ticker,profile,minScore,targetPct,stopPct}),
+      });
+      const d=await r.json();
+      if(!r.ok)throw new Error(d.error||'Erro no backtesting');
+      setResult(d);
+    }catch(e:any){setError(e.message);}
+    finally{setLoading(false);}
+  };
+
+  const s=result?.summary;
+
+  return(
+    <AppLayout>
+      <div style={{maxWidth:900,margin:'0 auto',padding:'24px 16px'}}>
+        <h1 style={{fontSize:24,fontWeight:700,color:'var(--text)',marginBottom:24}}>
+          📊 Backtesting de Estratégias
+        </h1>
+
+        {/* Config */}
+        <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:24,marginBottom:24}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:16,marginBottom:20}}>
+            <div>
+              <label style={{display:'block',fontSize:12,color:'var(--text-muted)',marginBottom:6}}>Ativo</label>
+              <select value={ticker} onChange={e=>setTicker(e.target.value)}
+                style={{width:'100%',background:'var(--surface-hover)',border:'1px solid var(--border)',
+                  borderRadius:6,padding:'8px 10px',color:'var(--text)',fontSize:14}}>
+                {TICKERS.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:12,color:'var(--text-muted)',marginBottom:6}}>Perfil</label>
+              <select value={profile} onChange={e=>setProfile(e.target.value)}
+                style={{width:'100%',background:'var(--surface-hover)',border:'1px solid var(--border)',
+                  borderRadius:6,padding:'8px 10px',color:'var(--text)',fontSize:14}}>
+                {['CONSERVADOR','MODERADO','AGRESSIVO','DIVIDENDOS'].map(p=><option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:12,color:'var(--text-muted)',marginBottom:6}}>Score Mínimo: {minScore}</label>
+              <input type="range" min={40} max={90} value={minScore} onChange={e=>setMinScore(+e.target.value)}
+                style={{width:'100%'}}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:12,color:'var(--text-muted)',marginBottom:6}}>Alvo %: {targetPct}%</label>
+              <input type="range" min={3} max={20} value={targetPct} onChange={e=>setTargetPct(+e.target.value)}
+                style={{width:'100%'}}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:12,color:'var(--text-muted)',marginBottom:6}}>Stop %: {stopPct}%</label>
+              <input type="range" min={2} max={15} value={stopPct} onChange={e=>setStopPct(+e.target.value)}
+                style={{width:'100%'}}/>
+            </div>
           </div>
-          <button onClick={handleRun} disabled={loading} style={{padding:'10px 16px',background:loading?'var(--border)':'var(--accent)',color:loading?'var(--text-muted)':'var(--bg)',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer'}}>{loading?'Simulando...':'▶ Executar Backtest'}</button>
+          <button onClick={runBacktest} disabled={loading}
+            style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:8,
+              padding:'12px 32px',fontWeight:700,fontSize:15,cursor:loading?'not-allowed':'pointer',
+              opacity:loading?0.7:1,display:'flex',alignItems:'center',gap:8}}>
+            {loading?(<><span style={{animation:'spin 1s linear infinite',display:'inline-block'}}>⟳</span> Calculando...</>):'▶ Aplicar Backtesting'}
+          </button>
         </div>
+
+        {error&&<div style={{background:'#fed7d7',color:'#c53030',padding:16,borderRadius:8,marginBottom:16}}>{error}</div>}
+
+        {/* Results */}
+        {s&&(
+          <>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:24}}>
+              {[
+                {label:'Retorno Total',value:(s.totalReturn>0?'+':'')+s.totalReturn.toFixed(1)+'%',color:s.totalReturn>=0?'#00ff88':'#ff4757'},
+                {label:'Win Rate',value:s.winRate.toFixed(1)+'%',color:s.winRate>=50?'#00ff88':'#ff4757'},
+                {label:'Sharpe Ratio',value:s.sharpeRatio.toFixed(2),color:s.sharpeRatio>=1?'#00ff88':'#ffd700'},
+                {label:'Max Drawdown',value:s.maxDrawdown.toFixed(1)+'%',color:'#ff4757'},
+                {label:'Total Trades',value:String(s.totalTrades),color:'var(--text)'},
+                {label:'Ganhos/Perdas',value:s.wins+'/'+s.losses,color:'var(--text)'},
+                {label:'Profit Factor',value:s.profitFactor.toFixed(2),color:s.profitFactor>=1.5?'#00ff88':'#ffd700'},
+                {label:'Equity Final',value:'R$ '+s.finalEquity.toFixed(0),color:'var(--text)'},
+              ].map(m=>(
+                <div key={m.label} style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:16}}>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginBottom:4}}>{m.label}</div>
+                  <div style={{fontSize:20,fontWeight:700,color:m.color}}>{m.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Trades table */}
+            {result.trades.length>0&&(
+              <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:16}}>
+                <h3 style={{fontSize:16,fontWeight:600,color:'var(--text)',marginBottom:16}}>Últimos {result.trades.length} Trades</h3>
+                <div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                    <thead>
+                      <tr style={{borderBottom:'1px solid var(--border)'}}>
+                        {['Entrada','Saída','Dias','P&L %','Resultado'].map(h=>(
+                          <th key={h} style={{textAlign:'left',padding:'6px 12px',color:'var(--text-muted)',fontWeight:600}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.trades.slice(-15).reverse().map((t,i)=>(
+                        <tr key={i} style={{borderBottom:'1px solid var(--border)'}}>
+                          <td style={{padding:'6px 12px',color:'var(--text)'}}>{t.entryDate}</td>
+                          <td style={{padding:'6px 12px',color:'var(--text)'}}>{t.exitDate}</td>
+                          <td style={{padding:'6px 12px',color:'var(--text)'}}>{t.holdingDays}d</td>
+                          <td style={{padding:'6px 12px',color:t.pnlPercent>=0?'#00ff88':'#ff4757',fontWeight:700}}>
+                            {t.pnlPercent>0?'+':''}{t.pnlPercent.toFixed(2)}%
+                          </td>
+                          <td style={{padding:'6px 12px'}}>
+                            <span style={{background:t.result==='WIN'?'rgba(0,255,136,0.15)':'rgba(255,71,87,0.15)',
+                              color:t.result==='WIN'?'#00ff88':'#ff4757',padding:'2px 8px',borderRadius:4,fontSize:12,fontWeight:700}}>
+                              {t.result}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
-      <div>
-        {loading&&<div style={{padding:60,textAlign:'center',color:'var(--text-muted)'}}>Processando histórico de {ticker}...</div>}
-        {!loading&&!bt&&<div style={{padding:60,textAlign:'center',color:'var(--text-muted)'}}>Configure e execute o backtest</div>}
-        {!loading&&bt&&<div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
-            <StatCard label="Taxa de Acerto" value={(bt.stats.winRate*100).toFixed(1)+'%'} color={bt.stats.winRate>0.6?'var(--green)':bt.stats.winRate>0.4?'var(--yellow)':'var(--red)'}/>
-            <StatCard label="Retorno Total" value={(bt.stats.totalReturn>0?'+':'')+bt.stats.totalReturn+'%'} color={bt.stats.totalReturn>0?'var(--green)':'var(--red)'}/>
-            <StatCard label="Max Drawdown" value={'-'+bt.stats.maxDrawdown+'%'} color="var(--red)"/>
-            <StatCard label="Sharpe" value={bt.stats.sharpe} color={bt.stats.sharpe>1?'var(--green)':'var(--text)'}/>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
-            <StatCard label="Trades" value={bt.stats.totalTrades}/>
-            <StatCard label="Vitórias" value={bt.stats.wins} color="var(--green)"/>
-            <StatCard label="Derrotas" value={bt.stats.losses} color="var(--red)"/>
-            <StatCard label="Profit Factor" value={bt.stats.profitFactor} color={bt.stats.profitFactor>=1.5?'var(--green)':'var(--text)'}/>
-          </div>
-          {equityData.length>1&&<div style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:12,padding:20,marginBottom:16}}>
-            <div style={{fontSize:13,fontWeight:700,color:'var(--text)',marginBottom:12}}>Curva de Capital (base 100)</div>
-            <ResponsiveContainer width="100%" height={180}><LineChart data={equityData}><XAxis dataKey="date" tick={{fill:'var(--text-muted)',fontSize:10}} tickLine={false} axisLine={false} interval={Math.floor(equityData.length/6)}/><YAxis tick={{fill:'var(--text-muted)',fontSize:10}} tickLine={false} axisLine={false}/><Tooltip contentStyle={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:8,fontSize:12}}/><ReferenceLine y={100} stroke="var(--border)" strokeDasharray="4 2"/><Line type="monotone" dataKey="equity" stroke="var(--accent)" strokeWidth={2} dot={false}/></LineChart></ResponsiveContainer>
-          </div>}
-          <div style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:12,overflow:'hidden'}}>
-            <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',fontSize:13,fontWeight:700,color:'var(--text)'}}>Log de Trades</div>
-            <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-              <thead><tr style={{background:'var(--surface)'}}>{['Entrada','Saída','Preço In','Preço Out','Retorno','Dias','Score','Motivo'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',color:'var(--text-muted)',fontWeight:600}}>{h}</th>)}</tr></thead>
-              <tbody>{bt.trades.slice(0,25).map((tr,i)=>(
-                <tr key={i} style={{borderBottom:'1px solid var(--border)',background:i%2===0?'transparent':'var(--surface)'}}>
-                  <td style={{padding:'7px 10px',color:'var(--text-muted)',fontSize:11}}>{tr.entryDate}</td>
-                  <td style={{padding:'7px 10px',color:'var(--text-muted)',fontSize:11}}>{tr.exitDate}</td>
-                  <td style={{padding:'7px 10px',fontFamily:'var(--mono)'}}>R${tr.entryPrice.toFixed(2)}</td>
-                  <td style={{padding:'7px 10px',fontFamily:'var(--mono)'}}>R${tr.exitPrice.toFixed(2)}</td>
-                  <td style={{padding:'7px 10px',fontWeight:700,color:tr.returnPct>0?'var(--green)':'var(--red)',fontFamily:'var(--mono)'}}>{tr.returnPct>0?'+':''}{tr.returnPct.toFixed(2)}%</td>
-                  <td style={{padding:'7px 10px',color:'var(--text-muted)'}}>{tr.holdingDays}d</td>
-                  <td style={{padding:'7px 10px',fontWeight:700,color:'var(--accent)'}}>{tr.signalScore}</td>
-                  <td style={{padding:'7px 10px',fontSize:11,color:tr.exitReason==='target'?'var(--green)':tr.exitReason==='stop'?'var(--red)':'var(--text-muted)'}}>{tr.exitReason}</td>
-                </tr>
-              ))}</tbody>
-            </table></div>
-          </div>
-        </div>}
-      </div>
-    </div>
-  </div>);}
+    </AppLayout>
+  );
+}
