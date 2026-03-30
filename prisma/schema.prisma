@@ -8,158 +8,150 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model Plan {
-  id                   String   @id @default(cuid())
-  name                 String   @unique
-  stripePriceIdMonthly String?
-  maxAssets            Int      @default(10)
-  maxAlerts            Int      @default(5)
-  maxAiDaily           Int      @default(3)
-  cacheSeconds         Int      @default(300)
-  backtestDays         Int      @default(30)
-  createdAt            DateTime @default(now())
-  users                User[]
+model QrPlan {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  maxAssets    Int      @default(10)
+  maxAlerts    Int      @default(5)
+  maxAiDaily   Int      @default(3)
+  cacheSeconds Int      @default(300)
+  backtestDays Int      @default(30)
+  createdAt    DateTime @default(now())
 
-  @@map("qr_plans")
+  @@map("plans")
+  @@schema("qr")
 }
 
-model User {
-  id                   String   @id @default(cuid())
-  email                String   @unique
-  name                 String?
-  passwordHash         String?
-  role                 String   @default("USER")
-  plan                 String   @default("FREE")
-  profile              String   @default("MODERADO")
-  planId               String?
-  stripeCustomerId     String?
-  stripeSubscriptionId String?
-  aiUsageToday         Int      @default(0)
-  aiUsageResetAt       DateTime @default(now())
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  planRelation         Plan?    @relation(fields: [planId], references: [id])
-  watchlists           Watchlist[]
-  alerts               Alert[]
-  signals              Signal[]
-  aiUsage              AiUsage[]
+model QrUser {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  name             String?
+  passwordHash     String?  @map("password_hash")
+  role             String   @default("USER")
+  plan             String   @default("FREE")
+  profile          String   @default("MODERADO")
+  planId           String?  @map("plan_id")
+  aiUsageToday     Int      @default(0) @map("ai_usage_today")
+  aiUsageResetAt   DateTime @default(now()) @map("ai_usage_reset_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  watchlists       QrWatchlist[]
+  alerts           QrAlert[]
+  signals          QrSignal[]
 
-  @@map("qr_users")
+  @@map("users")
+  @@schema("qr")
 }
 
-model Asset {
+model QrAsset {
   id        String   @id @default(cuid())
   ticker    String   @unique
   name      String
   type      String   @default("ACAO")
   sector    String?
   active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  signals   Signal[]
-  watchlistItems WatchlistItem[]
-  alerts    Alert[]
+  createdAt DateTime @default(now()) @map("created_at")
+  signals   QrSignal[]
+  watchlistItems QrWatchlistItem[]
+  alerts    QrAlert[]
 
-  @@map("qr_assets")
+  @@map("assets")
+  @@schema("qr")
 }
 
-model Signal {
-  id            String   @id @default(cuid())
-  assetId       String?
-  userId        String?
-  score         Float
-  tag           String
-  profile       String   @default("MODERADO")
-  breakdown     Json     @default("{}")
-  justification Json     @default("[]")
-  risks         Json     @default("[]")
-  targetPrice   Float?
-  stopLoss      Float?
-  horizon       String?
-  confidence    Float    @default(0)
-  weights       Json     @default("{}")
-  price         Float    @default(0)
-  generatedAt   DateTime @default(now())
-  asset         Asset?   @relation(fields: [assetId], references: [id])
-  user          User?    @relation(fields: [userId], references: [id])
+model QrSignal {
+  id           String   @id @default(cuid())
+  assetId      String?  @map("asset_id")
+  userId       String?  @map("user_id")
+  score        Float
+  tag          String
+  profile      String   @default("MODERADO")
+  breakdown    Json     @default("{}")
+  justification Json    @default("[]")
+  risks        Json     @default("[]")
+  targetPrice  Float?   @map("target_price")
+  stopLoss     Float?   @map("stop_loss")
+  horizon      String?
+  confidence   Float    @default(0)
+  weights      Json     @default("{}")
+  price        Float    @default(0)
+  generatedAt  DateTime @default(now()) @map("generated_at")
+  asset        QrAsset? @relation(fields: [assetId], references: [id])
+  user         QrUser?  @relation(fields: [userId], references: [id])
 
-  @@map("qr_signals")
+  @@map("signals")
+  @@schema("qr")
 }
 
-model Watchlist {
+model QrWatchlist {
   id        String   @id @default(cuid())
-  userId    String
+  userId    String   @map("user_id")
   name      String   @default("Principal")
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
-  items     WatchlistItem[]
+  createdAt DateTime @default(now()) @map("created_at")
+  user      QrUser   @relation(fields: [userId], references: [id])
+  items     QrWatchlistItem[]
 
-  @@map("qr_watchlists")
+  @@map("watchlists")
+  @@schema("qr")
 }
 
-model WatchlistItem {
+model QrWatchlistItem {
   id          String   @id @default(cuid())
-  watchlistId String
-  assetId     String
-  addedAt     DateTime @default(now())
-  watchlist   Watchlist @relation(fields: [watchlistId], references: [id])
-  asset       Asset    @relation(fields: [assetId], references: [id])
+  watchlistId String   @map("watchlist_id")
+  assetId     String   @map("asset_id")
+  addedAt     DateTime @default(now()) @map("added_at")
+  watchlist   QrWatchlist @relation(fields: [watchlistId], references: [id])
+  asset       QrAsset  @relation(fields: [assetId], references: [id])
 
   @@unique([watchlistId, assetId])
-  @@map("qr_watchlist_items")
+  @@map("watchlist_items")
+  @@schema("qr")
 }
 
-model Alert {
-  id            String    @id @default(cuid())
-  userId        String
-  assetId       String?
+model QrAlert {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  assetId       String?  @map("asset_id")
   type          String
-  condition     Json      @default("{}")
-  channels      String[]  @default(["panel"])
-  active        Boolean   @default(true)
-  triggered     Boolean   @default(false)
+  condition     Json     @default("{}")
+  channels      String[] @default(["panel"])
+  active        Boolean  @default(true)
+  triggered     Boolean  @default(false)
   message       String?
-  lastTriggered DateTime?
-  createdAt     DateTime  @default(now())
-  user          User      @relation(fields: [userId], references: [id])
-  asset         Asset?    @relation(fields: [assetId], references: [id])
+  lastTriggered DateTime? @map("last_triggered_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  user          QrUser   @relation(fields: [userId], references: [id])
+  asset         QrAsset? @relation(fields: [assetId], references: [id])
 
-  @@map("qr_alerts")
+  @@map("alerts")
+  @@schema("qr")
 }
 
-model NewsCache {
+model QrNewsCache {
   id             String   @id @default(cuid())
   title          String
   description    String?
   url            String   @unique
   source         String
   sentiment      String   @default("neutro")
-  sentimentScore Float    @default(0)
+  sentimentScore Float    @default(0) @map("sentiment_score")
   tickers        String[] @default([])
-  publishedAt    DateTime
-  cachedAt       DateTime @default(now())
+  publishedAt    DateTime @map("published_at")
+  cachedAt       DateTime @default(now()) @map("cached_at")
 
-  @@map("qr_news_cache")
+  @@map("news_cache")
+  @@schema("qr")
 }
 
-model JobLog {
-  id         String   @id @default(cuid())
-  jobName    String
-  status     String
-  durationMs Int      @default(0)
-  itemCount  Int?
-  error      String?
-  createdAt  DateTime @default(now())
+model QrJobLog {
+  id        String   @id @default(cuid())
+  jobName   String   @map("job_name")
+  status    String
+  durationMs Int     @default(0) @map("duration_ms")
+  itemCount Int?     @map("item_count")
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
 
-  @@map("qr_job_logs")
-}
-
-model AiUsage {
-  id     String   @id @default(cuid())
-  userId String
-  date   DateTime @default(now())
-  count  Int      @default(0)
-  user   User     @relation(fields: [userId], references: [id])
-
-  @@unique([userId, date])
-  @@map("qr_ai_usage")
+  @@map("job_logs")
+  @@schema("qr")
 }
