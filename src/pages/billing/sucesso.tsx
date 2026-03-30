@@ -1,18 +1,30 @@
-import{useEffect}from 'react';
-import{useRouter}from 'next/router';
 import Link from 'next/link';
+import{useRouter}from 'next/router';
+import{useEffect,useState}from 'react';
+import{useSession}from 'next-auth/react';
+
 export default function BillingSuccess(){
-  const router=useRouter();
-  const{plan}=router.query;
+  const{query}=useRouter();
+  const plan=String(query.plan||'PRO').toUpperCase();
+  const{update}=useSession();
+  const[updated,setUpdated]=useState(false);
+
+  useEffect(()=>{
+    // Atualiza a sessão após 3s para refletir o novo plano
+    const t=setTimeout(async()=>{await update();setUpdated(true);},3000);
+    return()=>clearTimeout(t);
+  },[]);
+
   return(
-    <div style={{minHeight:'100vh',background:'#0a0e1a',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:24,fontFamily:'var(--font-sans)'}}>
-      <div style={{fontSize:64}}>🎉</div>
-      <h1 style={{color:'#00ff88',fontSize:32,fontWeight:700,margin:0}}>Pagamento confirmado!</h1>
-      <p style={{color:'#a0aec0',fontSize:18,margin:0}}>
-        Seu plano <strong style={{color:'#00d9ff'}}>{plan||'PRO'}</strong> foi ativado com sucesso.
+    <div style={{minHeight:'100vh',background:'#0a0e1a',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:24,fontFamily:'sans-serif',padding:24}}>
+      <div style={{fontSize:72}}>🎉</div>
+      <h1 style={{color:'#00ff88',fontSize:28,fontWeight:800,margin:0,textAlign:'center'}}>Pagamento confirmado!</h1>
+      <p style={{color:'#a0aec0',fontSize:17,margin:0,textAlign:'center'}}>
+        Seu plano <strong style={{color:'#00d9ff'}}>{plan}</strong> foi ativado com sucesso.
       </p>
-      <p style={{color:'#718096',fontSize:14,margin:0}}>O upgrade pode levar alguns segundos para aparecer.</p>
-      <Link href="/" style={{marginTop:16,background:'#00d9ff',color:'#0a0e1a',padding:'12px 32px',borderRadius:8,fontWeight:700,textDecoration:'none',fontSize:16}}>
+      {!updated&&<p style={{color:'#718096',fontSize:13,margin:0}}>Atualizando sua conta...</p>}
+      {updated&&<p style={{color:'#00ff88',fontSize:13,margin:0}}>✓ Conta atualizada!</p>}
+      <Link href="/" style={{marginTop:8,background:'linear-gradient(135deg,#00d9ff,#00ff88)',color:'#0a0e1a',padding:'14px 36px',borderRadius:10,fontWeight:800,textDecoration:'none',fontSize:16}}>
         Ir ao Dashboard →
       </Link>
     </div>
